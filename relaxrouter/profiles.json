@@ -1,0 +1,5 @@
+[
+  {"name":"MOF screening","priority":"speed","preferred_model":null,"fmax":0.05,"relax_cell":true},
+  {"name":"bulk crystals","priority":"balanced","preferred_model":null,"fmax":0.05,"relax_cell":true},
+  {"name":"molecules","priority":"speed","preferred_model":"mace_off_small","fmax":0.05,"relax_cell":false}
+]
