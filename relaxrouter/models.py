@@ -83,8 +83,10 @@ class ModelCache:
         loaded = time.perf_counter()
         warm = atoms.copy()
         warm.calc = calc
-        warm.get_potential_energy()
-        warm.get_forces()
+        import numpy as np
+        from .engine import NumericalFailure
+        if not np.isfinite(warm.get_potential_energy()) or not np.isfinite(warm.get_forces()).all():
+            raise NumericalFailure("Nonfinite energy or forces during warmup")
         self.synchronize()
         self.cache[key] = calc
         record = dict(model=model_id, dtype=dtype, library_import_s=imported-start,

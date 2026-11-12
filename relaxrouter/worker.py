@@ -62,15 +62,17 @@ class Worker:
                        device=self.cache.device, gpu_name=self.cache.gpu_name, optimizer="ASE FIRE",
                        cold_starts=self.cache.cold_starts, carbon_intensity=self.config.carbon_intensity,
                        carbon_scope="GPU only; excludes CPU, memory and facility overhead")
-        temporary = directory / "provenance.tmp"
-        temporary.write_text(json.dumps(payload, indent=2, allow_nan=False), encoding="utf-8")
-        temporary.replace(directory / "provenance.json")
+        with self.store.lock:
+            temporary = directory / "provenance.tmp"
+            temporary.write_text(json.dumps(payload, indent=2, allow_nan=False), encoding="utf-8")
+            temporary.replace(directory / "provenance.json")
 
     def run(self, job_id: str) -> None:
         job = self.store.get(job_id)
         directory = self.store.directory(job_id)
         job.update(status="running", started=now(), batched=False, batch_size=1,
                    batching_reason="Sequential ASE fallback; native torch-sim batching is not enabled.")
+        job.pop("finished", None)
         self.store.save(job)
         begin = time.perf_counter()
         attempts = job.setdefault("attempts", [])
@@ -82,20 +84,22 @@ class Worker:
                 attempts.append(attempt)
                 source = directory / "traj.extxyz" if (directory / "traj.extxyz").exists() else directory / "initial.extxyz"
                 atoms = read(source, index=-1)
-                calc = self.cache.get(job["model_id"], job["options"]["dtype"], atoms)
-                self.telemetry.prepare(self.cache.device)
 
                 def record(frame: dict) -> None:
                     job.setdefault("history", []).append(frame)
                     job.update(current_step=frame["step"], max_force=frame["max_force"])
                     self.store.save(job)
 
-                self.telemetry.start()
-                attempt_start = time.perf_counter()
+                attempt_start = None
                 try:
+                    calc = self.cache.get(job["model_id"], job["options"]["dtype"], atoms)
+                    self.telemetry.prepare(self.cache.device)
+                    self.cache.synchronize()
+                    self.telemetry.start()
+                    attempt_start = time.perf_counter()
                     result = relax(atoms, calc, job["options"], directory, self.cache.synchronize,
                                    record, job.get("current_step", 0))
-                    job.setdefault("step_times", []).extend(result.pop("step_times"))
+                    result.pop("step_times")
                     job.update(result)
                     attempt["status"] = job["status"]
                 except NumericalFailure as exc:
@@ -106,9 +110,14 @@ class Worker:
                         job["options"]["dtype"] = "float64"
                         continue
                     job.update(status="quarantined", error=str(exc))
+                except Exception as exc:
+                    attempt.update(status="failed", error=str(exc))
+                    raise
                 finally:
-                    attempt.update(finished=now(), wall_time=time.perf_counter()-attempt_start,
-                                   **self.telemetry.stop())
+                    attempt["finished"] = now()
+                    if attempt_start is not None:
+                        self.cache.synchronize()
+                        attempt.update(wall_time=time.perf_counter()-attempt_start, **self.telemetry.stop())
                     self.store.save(job)
                 if job["status"] == "not_converged" and self.config.auto_continue and continuations == 0:
                     continuations += 1
@@ -123,7 +132,8 @@ class Worker:
         finally:
             job.update(finished=now(), wall_time=job.get("wall_time", 0) + time.perf_counter()-begin)
             job["steps_taken"] = max((f["step"] for f in job.get("history", [])), default=0)
-            times = job.get("step_times", [])
+            times = [f["step_time"] for f in job.get("history", []) if f.get("step_time") is not None]
+            job["step_times"] = times
             job["median_step_time"] = statistics.median(times) if times else None
             from .telemetry import summarize
             job.update(summarize(attempts, self.telemetry.idle_power, self.config.carbon_intensity))

@@ -22,7 +22,7 @@ def relax(atoms: Atoms, calc, options: dict, directory: Path, sync: Callable,
     times = []
     steps = 0
 
-    def evaluate(save: bool) -> tuple[float, float]:
+    def evaluate(save: bool, step_time: float | None = None) -> tuple[float, float]:
         energy = float(atoms.get_potential_energy())
         forces = atoms.get_forces()
         effective = target.get_forces()
@@ -33,7 +33,7 @@ def relax(atoms: Atoms, calc, options: dict, directory: Path, sync: Callable,
         if save:
             write(directory / "traj.extxyz", atoms, format="extxyz", append=True)
             record(dict(step=start_step + steps, energy=energy, max_force=max_force,
-                        convergence_force=criterion))
+                        convergence_force=criterion, step_time=step_time))
         return energy, criterion
 
     energy, force = evaluate(True)
@@ -49,7 +49,7 @@ def relax(atoms: Atoms, calc, options: dict, directory: Path, sync: Callable,
             sync()
         times.append(time.perf_counter() - begin)
         steps += 1
-        evaluate(True)
+        evaluate(True, times[-1])
     periodic = atoms.pbc.any() and atoms.cell.rank == 3
     final = "final.cif" if periodic else "final.xyz"
     write(directory / final, atoms, format="cif" if periodic else "xyz")

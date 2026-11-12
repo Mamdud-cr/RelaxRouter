@@ -144,7 +144,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     def detail(job_id: str):
         job = get_job(job_id)
         path = store.directory(job_id) / "provenance.json"
-        job["provenance"] = json.loads(path.read_text()) if path.exists() else None
+        with store.lock:
+            job["provenance"] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
         return job
 
     @app.get("/api/jobs/{job_id}/download/{kind}")
