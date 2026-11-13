@@ -14,5 +14,9 @@ dependencies = {file = ["requirements.txt"]}
 [tool.setuptools.package-data]
 relaxrouter = ["static/*.html", "profiles.json"]
 
+[tool.setuptools.packages.find]
+include = ["relaxrouter*"]
+
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 markers = ["integration: downloads and evaluates a real MACE model"]

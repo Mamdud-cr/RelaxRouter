@@ -32,7 +32,7 @@ class Worker:
     def start(self) -> None:
         for job in reversed(self.store.all()):
             if job["status"] == "running":
-                job.update(status="failed", error="Server stopped during relaxation; valid frames retained.")
+                job.update(status="failed", finished=now(), error="Server stopped during relaxation; valid frames retained.")
                 self.store.save(job)
                 self.provenance(job)
             elif job["status"] == "queued":
@@ -58,7 +58,8 @@ class Worker:
 
     def provenance(self, job: dict) -> None:
         directory = self.store.directory(job["id"])
-        payload = dict(job, software=versions(), model_version=REGISTRY[job["model_id"]].version,
+        payload = dict(job, software=versions(), model_name=REGISTRY[job["model_id"]].display_name,
+                       model_version=REGISTRY[job["model_id"]].version,
                        device=self.cache.device, gpu_name=self.cache.gpu_name, optimizer="ASE FIRE",
                        cold_starts=self.cache.cold_starts, carbon_intensity=self.config.carbon_intensity,
                        carbon_scope="GPU only; excludes CPU, memory and facility overhead")
@@ -84,11 +85,12 @@ class Worker:
                 attempts.append(attempt)
                 source = directory / "traj.extxyz" if (directory / "traj.extxyz").exists() else directory / "initial.extxyz"
                 atoms = read(source, index=-1)
+                job["cell_relaxed"] = bool(job["options"]["relax_cell"] and atoms.pbc.any())
 
                 def record(frame: dict) -> None:
                     job.setdefault("history", []).append(frame)
                     job.update(current_step=frame["step"], max_force=frame["max_force"])
-                    self.store.save(job)
+                    self.store.save(dict(job, status="running"))
 
                 attempt_start = None
                 try:
@@ -118,7 +120,7 @@ class Worker:
                     if attempt_start is not None:
                         self.cache.synchronize()
                         attempt.update(wall_time=time.perf_counter()-attempt_start, **self.telemetry.stop())
-                    self.store.save(job)
+                    self.store.save(dict(job, status="running"))
                 if job["status"] == "not_converged" and self.config.auto_continue and continuations == 0:
                     continuations += 1
                     job.setdefault("retry_history", []).append(dict(timestamp=now(), reason="automatic continuation"))
@@ -130,15 +132,17 @@ class Worker:
             log.exception("Job %s failed", job_id)
             job.update(status="failed", error=str(exc))
         finally:
-            job.update(finished=now(), wall_time=job.get("wall_time", 0) + time.perf_counter()-begin)
+            job.update(finished=now(), total_wall_time=job.get("total_wall_time", 0) + time.perf_counter()-begin)
+            job["wall_time"] = sum(a.get("wall_time", 0) for a in attempts)
             job["steps_taken"] = max((f["step"] for f in job.get("history", [])), default=0)
             times = [f["step_time"] for f in job.get("history", []) if f.get("step_time") is not None]
             job["step_times"] = times
             job["median_step_time"] = statistics.median(times) if times else None
             from .telemetry import summarize
             job.update(summarize(attempts, self.telemetry.idle_power, self.config.carbon_intensity))
-            self.store.save(job)
-            self.provenance(job)
+            with self.store.lock:
+                self.store.save(job)
+                self.provenance(job)
 
     def confidence(self, job: dict, atoms) -> None:
         """Evaluate a different compatible model; no second model means unavailable."""
@@ -153,6 +157,8 @@ class Worker:
             other.calc = self.cache.get(choices[0].id, job["options"]["dtype"], atoms)
             delta = abs(float(other.get_potential_energy() - baseline_e)) / len(atoms)
             force_delta = float(np.linalg.norm(other.get_forces() - baseline_f, axis=1).max())
+            if not np.isfinite(delta) or not np.isfinite(force_delta):
+                raise ValueError("Nonfinite energy or forces in confidence calculation")
             job["confidence"] = dict(available=True, model_id=choices[0].id, energy_per_atom_difference=delta,
                                      max_force_difference=force_delta, threshold=self.config.confidence_threshold)
             job["low_confidence"] = delta > self.config.confidence_threshold

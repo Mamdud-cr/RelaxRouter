@@ -119,7 +119,8 @@ enabled** in this version: the permitted sequential ASE fallback is used whether
 or not torch-sim is installed. Provenance explicitly records `batched=false`,
 `batch_size=1` and the reason. No optional package is required for functionality.
 
-Job wall time includes cold starts and optional confidence evaluations; per-step
+Job wall time measures relaxation across attempts; `total_wall_time` additionally
+includes cold starts and optional confidence evaluations. Per-step
 timing brackets FIRE and evaluation with CUDA synchronization, and reports the
 median. Import/load/warmup breakdowns are logged on first use (startup remains
 lazy). Reliability rates exclude queued/running jobs. Size bins are [0,300),
@@ -180,3 +181,17 @@ python -m pytest -q -m "not integration"
 Fast API tests inject ASE EMT to exercise persistence, routing and failure paths
 without downloading models; the integration test uses the actual MACE calculator.
 No remote is configured and no push is required.
+
+Verified on Windows with Python 3.11.18: **12 tests passed**, including actual
+MACE-MP small copper convergence. Also exercised the live API and browser views
+for structures, plots and statistics. CUDA/NVML hardware was unavailable for this
+verification. Upstream PyTorch/e3nn deprecation and checkpoint-loading warnings
+remain; they do not fail the tests.
+
+This workspace also has a ready-to-use Python 3.11 test environment at
+`data/venv311`. To run it without a system Python launcher:
+
+```powershell
+.\data\venv311\Scripts\python.exe -m pip install -r requirements.txt
+.\data\venv311\Scripts\python.exe -m relaxrouter
+```

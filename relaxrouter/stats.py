@@ -60,8 +60,9 @@ Counts and convergence, non-convergence, failure and quarantine rates:
 ## Cost and timing
 Per-step times include FIRE step plus energy/force evaluation, bounded by CUDA
 synchronization before and after each timed call. Job median uses completed steps.
-Wall time includes loading, warmup, optional idle calibration and confidence check;
-attempt wall time measures relaxation only. Failed attempts retain finite frames.
+Wall time measures relaxation only, summed across attempts. Total wall time also
+includes loading, warmup, idle calibration and confidence checks, and is retained
+separately in provenance. Failed attempts retain finite frames and step times.
 Models persist in one thread/process; library import, checkpoint load and warmup
 times are logged separately on each first model/precision use.
 

@@ -50,6 +50,8 @@ async function viewer(id,url,format){const el=$('#'+id);el.replaceChildren();if(
 function plot(id,title,values){
   if(!window.Chart)return;
   if(charts[id])charts[id].destroy();
+  const textColor=matchMedia('(prefers-color-scheme:dark)').matches?'#a6bac4':'#657780';
+  Chart.defaults.color=textColor;
   charts[id]=new Chart($('#'+id),{
     type:'line',
     data:{labels:values.map(v=>v.step),datasets:[{

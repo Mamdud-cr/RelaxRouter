@@ -49,6 +49,8 @@ def test_api_roundtrip_stats_report(service):
     job = wait(client, job_id)
     assert job["status"] == "converged", job
     assert job["median_step_time"] > 0
+    assert job["total_wall_time"] >= job["wall_time"] > 0
+    assert job["wall_time"] == pytest.approx(sum(a.get("wall_time", 0) for a in job["attempts"]))
     for artifact in ("final", "trajectory", "provenance", "initial"):
         assert client.get(f"/api/jobs/{job_id}/download/{artifact}").status_code == 200
     provenance = client.get(f"/api/jobs/{job_id}/download/provenance").json()
@@ -116,3 +118,20 @@ def test_general_failure_is_retained(service):
     job = wait(client, job_id)
     assert job["status"] == "failed" and "Model unavailable" in job["error"]
     assert client.get(f"/api/jobs/{job_id}/download/provenance").status_code == 200
+
+
+def test_automatic_continuation_and_warmup_retry(service):
+    client, app = service
+    app.state.worker.config.auto_continue = True
+    job = wait(client, submit(client, max_steps=1, fmax=0.00000001))
+    assert job["status"] == "not_converged" and len(job["attempts"]) == 2
+    assert job["retry_history"][0]["reason"] == "automatic continuation"
+    seen = []
+    def get(model, dtype, atoms):
+        seen.append(dtype)
+        if len(seen) == 1:
+            raise NumericalFailure("Nonfinite warmup")
+        return EMT()
+    app.state.worker.cache.get = get
+    job = wait(client, submit(client))
+    assert job["status"] == "converged" and seen == ["float32", "float64"]
