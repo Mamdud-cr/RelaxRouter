@@ -3,11 +3,54 @@
 A local atomic-structure relaxation workbench with transparent model routing,
 persistent MACE calculators, a single background worker, and retained outcomes.
 No frontend build, database server, Docker, Redis or Celery. Runs on Windows,
-macOS and Linux; NVIDIA CUDA is optional. The architecture implements the
-infrastructure requirements supplied with the project, attributed to Goel, Das &
-Goddard, *Infrastructure challenges in scaling AI-driven materials discovery*
-(Comput. Mater. Sci., 2027). That future publication has not been independently
-verified; the supplied requirements are the implementation specification.
+macOS and Linux; NVIDIA CUDA is optional.
+
+The primary scientific motivation is **Naveen Goel, Tridip Das and William A.
+Goddard III, [*Infrastructure challenges in scaling AI-driven materials discovery:
+a critical review*](https://doi.org/10.1016/j.commatsci.2026.115212),
+Computational Materials Science 276, 115212 (2027)**. RelaxRouter translates
+selected infrastructure recommendations from that review into a small local
+application. It uses pretrained MACE potentials for the scientific calculations
+and ASE for structure handling and optimization; it does not train a new potential.
+
+## How the Goel, Das and Goddard paper is implemented
+
+RelaxRouter applies the review's recommendations for efficient execution,
+reliable screening and transparent reporting:
+
+| Idea from the review | Implementation in RelaxRouter |
+| --- | --- |
+| Reduce startup overhead (§3.3). | A persistent worker reuses cached models and runs one full relaxation per job. |
+| Retain difficult candidates (§§3.3–3.4). | Failures and non-converged structures remain available for retries and continuation; size-aware budgets and outcome statistics expose selection effects. |
+| Preserve reproducibility (§3.6; §4.4). | Trajectories, settings, versions and retry histories accompany each result, with a downloadable infrastructure report. |
+| Report computational cost (§§3.3, 4.5). | Synchronized GPU timing and optional NVML measurements provide utilization, energy and GPU-only carbon estimates. |
+
+The app implements selected principles, not a reproduction of the paper's
+120-MOF benchmark or its full reporting checklist. Routing rules, the step-budget
+formula and the two-model disagreement check are project heuristics. Native
+batching and distributed execution are not implemented.
+
+## How the project works
+
+1. **Read and validate.** The browser or REST client uploads CIF, POSCAR/VASP, XYZ
+   or extxyz. ASE [5] reads the structure; the API checks file size, atom count,
+   coordinates and periodic cell information.
+2. **Choose a potential.** `router.py` infers molecule, MOF or inorganic structure,
+   filters the registry by domain and declared element coverage, then applies the
+   speed/balanced/accuracy preference. Users can inspect the reasons or override
+   the choice. MACE-MP-0 small/medium [3] serve periodic materials; MACE-OFF23 small
+   [4] serves supported molecular compositions. Both build on MACE [2].
+3. **Relax locally.** FastAPI saves metadata in SQLite and places the job on a
+   `queue.Queue`. The single worker reuses a cached calculator on CUDA or CPU.
+   ASE's FIRE optimizer [6] updates atomic positions, optionally with
+   `FrechetCellFilter` for the periodic cell, until the force criterion or step
+   cap is reached.
+4. **Keep the evidence.** Valid frames, energies and forces are retained through
+   retries and continuations. Job files live under `data/jobs/<job_id>/`, including
+   `traj.extxyz`, a final CIF/XYZ when available, and `provenance.json`.
+5. **Inspect and report.** The static frontend polls the API, displays initial and
+   final structures with 3Dmol.js, plots energies/forces with Chart.js, and exposes
+   downloads, reliability statistics and a Markdown infrastructure report.
 
 ## Install and start
 
@@ -137,6 +180,9 @@ an ASE calculator with forces (and stress if relaxing cells).
 Shipped loaders explicitly call `mace_mp(model="small"/"medium")` and
 `mace_off(model="small")`, with `device` and `default_dtype`. They are pinned to
 `mace-torch==0.3.16`; loader signatures were checked against its installed source.
+The MACE architecture [2], MACE-MP foundation model [3] and MACE-OFF molecular
+potentials [4] are separate scientific contributions; cite the model actually
+used alongside the infrastructure review [1] when reporting calculations.
 See [MACE foundation model documentation](https://mace-docs.readthedocs.io/en/latest/guide/foundation_models.html).
 MACE-MP-0 uses MIT model licensing. **MACE-OFF23 uses an Academic Software License**;
 review [the model's license](https://github.com/ACEsuit/mace-off) before using it.
@@ -195,3 +241,35 @@ This workspace also has a ready-to-use Python 3.11 test environment at
 .\data\venv311\Scripts\python.exe -m pip install -r requirements.txt
 .\data\venv311\Scripts\python.exe -m relaxrouter
 ```
+
+## Scientific references
+
+1. **Infrastructure design.** N. Goel, T. Das and W. A. Goddard III.
+   *Infrastructure challenges in scaling AI-driven materials discovery: a critical
+   review.* Computational Materials Science **276**, 115212 (2027).
+   [doi:10.1016/j.commatsci.2026.115212](https://doi.org/10.1016/j.commatsci.2026.115212).
+   Primary motivation for persistent execution, retained failures, provenance and
+   infrastructure/energy reporting.
+2. **MACE architecture.** I. Batatia, D. P. Kovács, G. N. C. Simm, C. Ortner and
+   G. Csányi. *MACE: Higher Order Equivariant Message Passing Neural Networks for
+   Fast and Accurate Force Fields.* Advances in Neural Information Processing
+   Systems **35**, 11423–11436 (2022).
+   [arXiv:2206.07697](https://arxiv.org/abs/2206.07697).
+   Architecture underlying the shipped pretrained potentials.
+3. **MACE-MP.** I. Batatia et al. *A foundation model for atomistic materials
+   chemistry.* arXiv preprint, first posted 2023.
+   [arXiv:2401.00096](https://arxiv.org/abs/2401.00096).
+   Reference for the MACE-MP-0 materials checkpoints used by the small and medium loaders.
+4. **MACE-OFF.** D. P. Kovács et al. *MACE-OFF: Transferable Short Range Machine
+   Learning Force Fields for Organic Molecules.* arXiv preprint, first posted 2023.
+   [arXiv:2312.15211](https://arxiv.org/abs/2312.15211).
+   Reference for the MACE-OFF molecular potential family; this project loads OFF23 small.
+5. **ASE.** A. Hjorth Larsen et al. *The atomic simulation environment—a Python
+   library for working with atoms.* Journal of Physics: Condensed Matter **29**,
+   273002 (2017).
+   [doi:10.1088/1361-648X/aa680e](https://doi.org/10.1088/1361-648X/aa680e).
+   Structure I/O, calculator interface, filters and optimizer implementation.
+6. **FIRE.** E. Bitzek, P. Koskinen, F. Gähler, M. Moseler and P. Gumbsch.
+   *Structural Relaxation Made Simple.* Physical Review Letters **97**, 170201
+   (2006). [doi:10.1103/PhysRevLett.97.170201](https://doi.org/10.1103/PhysRevLett.97.170201).
+   Optimization algorithm used to relax atomic structures.
