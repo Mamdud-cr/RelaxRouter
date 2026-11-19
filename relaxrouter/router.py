@@ -1,6 +1,5 @@
 """Transparent domain, element, and cost routing."""
 from ase import Atoms
-from ase.data import atomic_numbers
 from .models import REGISTRY
 
 # Includes post-transition metals and metalloids commonly present in frameworks.
@@ -22,6 +21,14 @@ def compatible(atoms: Atoms) -> list:
             and (m.elements == "all" or elements <= set(m.elements))]
 
 
+def validate_elements(atoms: Atoms, model_id: str) -> None:
+    """Reject unsupported species before a model is queued or downloaded."""
+    model = REGISTRY[model_id]
+    missing = set(atoms.get_chemical_symbols()) - set(model.elements) if model.elements != "all" else set()
+    if missing:
+        raise ValueError(f"{model.display_name} does not support element(s): {', '.join(sorted(missing))}")
+
+
 def route(atoms: Atoms, priority: str = "balanced", model_id: str | None = None) -> tuple[str, list[str]]:
     kind = structure_type(atoms)
     reasons = [f"Detected {kind}; {len(atoms)} atoms."]
@@ -30,11 +37,13 @@ def route(atoms: Atoms, priority: str = "balanced", model_id: str | None = None)
     if model_id:
         if model_id not in REGISTRY:
             raise ValueError("Unknown model")
-        reasons.append("Manual/profile model override; domain and coverage are the user's responsibility.")
+        validate_elements(atoms, model_id)
+        reasons.append("Manual/profile model override; element coverage checked, domain choice is the user's responsibility.")
         return model_id, reasons
     candidates = compatible(atoms)
     if not candidates:
-        return "mace_mp_medium", reasons + ["WARNING: no compatible domain/element coverage; falling back to MACE-MP medium."]
+        validate_elements(atoms, "mace_mp_medium")
+        return "mace_mp_medium", reasons + ["WARNING: no compatible domain; falling back to element-compatible MACE-MP medium."]
     costs = {"low": 0, "medium": 1, "high": 2}
     candidates.sort(key=lambda m: costs[m.cost])
     if priority == "speed" or (priority == "balanced" and len(atoms) > 1000):

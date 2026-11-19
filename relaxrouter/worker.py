@@ -72,7 +72,7 @@ class Worker:
         job = self.store.get(job_id)
         directory = self.store.directory(job_id)
         job.update(status="running", started=now(), batched=False, batch_size=1,
-                   batching_reason="Sequential ASE fallback; native torch-sim batching is not enabled.")
+                   batching_reason="Sequential ASE execution; native batching is not implemented.")
         job.pop("finished", None)
         self.store.save(job)
         begin = time.perf_counter()

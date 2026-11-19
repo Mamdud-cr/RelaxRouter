@@ -7,6 +7,15 @@ from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
+# Atomic-number table in the MACE-MP-0 small/medium checkpoints (89 elements).
+# https://github.com/ACEsuit/mace-foundations
+MP_ELEMENTS = tuple("""
+H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn
+Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La
+Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi
+Ac Th Pa U Np Pu
+""".split())
+
 
 def mp_small(device: str, dtype: str) -> Any:
     from mace.calculators import mace_mp
@@ -37,13 +46,13 @@ class Model:
 
 REGISTRY = {
     m.id: m for m in [
-        Model("mace_mp_small", "MACE-MP small", mp_small, ("inorganic", "mof"), "all", "low", "MACE-MP: MIT model license", "MP-0 small 2023-12-10"),
-        Model("mace_mp_medium", "MACE-MP medium", mp_medium, ("inorganic", "mof"), "all", "medium", "MACE-MP: MIT model license", "MP-0 medium 2023-12-03"),
+        Model("mace_mp_small", "MACE-MP small", mp_small, ("inorganic", "mof"), MP_ELEMENTS, "low", "MACE-MP: MIT model license", "MP-0 small 2023-12-10"),
+        Model("mace_mp_medium", "MACE-MP medium", mp_medium, ("inorganic", "mof"), MP_ELEMENTS, "medium", "MACE-MP: MIT model license", "MP-0 medium 2023-12-03"),
         Model("mace_off_small", "MACE-OFF small", off_small, ("molecule",), tuple("H C N O F P S Cl Br I".split()), "low", "Academic Software License; review before use", "OFF23 small"),
     ]
 }
 # To add another package: define def other(device, dtype): return OtherCalculator(...)
-# then REGISTRY['other'] = Model('other', 'Other', other, ('inorganic',), 'all',
+# then REGISTRY['other'] = Model('other', 'Other', other, ('inorganic',), ('H', 'C'),
 #                              'high', 'Review package/model license', 'checkpoint-v1').
 
 

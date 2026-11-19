@@ -90,7 +90,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.get("/api/health")
     def health():
         return dict(device=worker.cache.device, gpu_name=worker.cache.gpu_name, queue_length=worker.queue.qsize(),
-                    pynvml=available("pynvml"), torch_sim=available("torch_sim"), batching_enabled=False,
+                    pynvml=available("pynvml"), batching_enabled=False,
                     device_initialized=bool(worker.cache.cache), requested_device=config.device)
 
     @app.post("/api/route")

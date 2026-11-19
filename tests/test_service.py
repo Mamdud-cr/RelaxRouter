@@ -86,7 +86,7 @@ def test_retry_nan_and_quarantine(service, monkeypatch):
     assert job["status"] == "quarantined" and len(job["attempts"]) == 2
 
 
-def test_continue_and_fallback(service):
+def test_continue_preserves_history(service):
     client, app = service
     job_id = submit(client, max_steps=1, fmax=0.00000001)
     job = wait(client, job_id)
@@ -96,7 +96,7 @@ def test_continue_and_fallback(service):
     continued = wait(client, job_id)
     assert len(continued["history"]) > n
     assert continued["batch_size"] == 1 and not continued["batched"]
-    assert "fallback" in continued["batching_reason"].lower()
+    assert "sequential" in continued["batching_reason"].lower()
     assert len(continued["attempts"]) == 2
 
 
@@ -107,6 +107,13 @@ def test_validation(service):
     assert client.get("/api/jobs/missing").status_code == 404
     assert client.get("/api/jobs/missing/download/../../foo").status_code == 404
     assert client.post("/api/jobs", files={"file":("one.xyz", "1\n\nCu 0 0 0\n")}, data={"fmax":"nan"}).status_code == 422
+    unsupported = {"file": ("unsupported.xyz", "1\n\nOg 0 0 0\n")}
+    for endpoint in ("/api/jobs", "/api/route"):
+        response = client.post(endpoint, files=unsupported)
+        assert response.status_code == 422
+        assert "does not support element(s): Og" in response.json()["detail"]
+    health = client.get("/api/health").json()
+    assert "torch_sim" not in health and health["batching_enabled"] is False
 
 
 def test_general_failure_is_retained(service):

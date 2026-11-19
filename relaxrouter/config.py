@@ -12,4 +12,3 @@ class Config:
     auto_continue: bool = os.getenv("RELAXROUTER_AUTO_CONTINUE", "0") == "1"
     retry_limit: int = int(os.getenv("RELAXROUTER_RETRY_LIMIT", "1"))
     confidence_threshold: float = float(os.getenv("RELAXROUTER_CONFIDENCE_THRESHOLD", "0.05"))
-    max_batch_size: int = int(os.getenv("RELAXROUTER_MAX_BATCH_SIZE", "8"))

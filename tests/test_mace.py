@@ -2,7 +2,7 @@
 import pytest
 from ase.build import bulk
 from relaxrouter.engine import relax
-from relaxrouter.models import ModelCache
+from relaxrouter.models import ModelCache, MP_ELEMENTS
 
 
 @pytest.mark.integration
@@ -13,6 +13,8 @@ def test_perturbed_copper_mace(tmp_path):
     atoms.positions[0] += [0.04, 0.03, 0.01]
     cache = ModelCache("cpu")
     calc = cache.get("mace_mp_small", "float32", atoms)
+    from ase.data import chemical_symbols
+    assert tuple(chemical_symbols[z] for z in calc.z_table.zs) == MP_ELEMENTS
     assert cache.get("mace_mp_small", "float32", atoms) is calc
     frames = []
     result = relax(atoms, calc, dict(fmax=0.05, max_steps=100, relax_cell=False), tmp_path, cache.synchronize, frames.append)

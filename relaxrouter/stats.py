@@ -82,6 +82,6 @@ FIRE default fmax = 0.05 eV/Å. Numerical failures retry in float64 up to
 {config.retry_limit} times per invocation; exhaustion is quarantined. Other
 exceptions are failed. One automatic continuation on step cap: {config.auto_continue}.
 Manual continuation starts FIRE from the last valid frame with a fresh step budget.
-Batching is optional and disabled; all jobs use sequential ASE with batch_size=1.
+All jobs use sequential ASE with batch_size=1; native batching is not implemented.
 Per-job provenance contains exact options, model versions, attempts and router reasons.
 """
